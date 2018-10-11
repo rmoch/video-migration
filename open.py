@@ -1,6 +1,8 @@
 import os
 import pprint
 
+import click
+
 import xmltodict
 import xml.etree.ElementTree as ET
 
@@ -14,49 +16,49 @@ import xml.etree.ElementTree as ET
 """
 
 
-PATH = "selection/CNAM...01002S03...session03"
-
 CLOUDFRONT_URL = "https://d381hmu4snvm3e.cloudfront.net/videos/{video_id}/HD.mp4"
 
 
-def read_xmlfile(folder, url_name):
-    """
-    """
-    base_path = os.getcwd()
-    return ET.parse(os.path.join(base_path, PATH, folder, url_name + ".xml")).getroot()
+def read_course_structure(path, convert_video):
 
+    def read_xmlfile(folder, url_name, getroot=True):
+        """
+        Read xml file, returns
+        """
+        base_path = os.getcwd()
+        result = ET.parse(os.path.join(
+            base_path, path, folder, url_name + ".xml"))
+        if getroot:
+            result = result.getroot()
+        return result
 
-def prettyprint(data):
-    pp = pprint.PrettyPrinter(indent=4)
-    pp.pprint(data)
+    def prettyprint(data):
+        pp = pprint.PrettyPrinter(indent=4)
+        pp.pprint(data)
 
+    def replace_video_xblock(url_name):
+        """
+        Regenerate a vertical to change its video xblock
+        """
+        print("            Libcast video xblock for video ID: {url}".format(
+            url=CLOUDFRONT_URL.format(video_id=xblock["@video_id"])))
 
-def replace_video_xblock(url_name):
-    """
-    Regenerate a vertical to change its video xblock
-    """
-    print("            Libcast video xblock for video ID: {url}".format(
-        url=CLOUDFRONT_URL.format(video_id=xblock["@video_id"])))
+    def process_verticals(verticals_to_process, convert_video):
+        """
+        Rewrite vertical xml file containing xblock we aim.
+        """
 
-#replace_video_xblock(url_name=vertical_url["@url_name"])
-
-
-
-def process_verticals(verticals_to_process):
-    """
-    Rewrite vertical xml file containin xblock we aim.
-    """
-
-    #for url_name in verticals_to_process:
-    #    vertical = read_xmlfile("vertical", url_name)
-#
-    #    #import ipdb; ipdb.set_trace()
-    #    #for xblock_name in filter_children(vertical):
-#
-    #    new_vertical = xmltodict.unparse(vertical, full_document=False, short_empty_elements=True)
-
-
-def read_course_structure():
+        for url_name in verticals_to_process:
+            vertical = read_xmlfile("vertical", url_name, getroot=True)
+            for idx, xblock in enumerate(vertical):
+                if xblock.tag == "libcast_xblock" and convert_video:
+                    if convert_video == "youtube":
+                        import ipdb; ipdb.set_trace()
+                        video = ET.Element("video")
+                        video.attrib = {"display_name": vertical.attrib["display_name"]}
+                        del vertical[idx]
+                        vertical.insert(idx, video)
+                        print(ET.tostring(vertical))
 
     root = read_xmlfile("", "course")
     print("Course key: {url_name}/{org}/{course}".format(
@@ -73,14 +75,15 @@ def read_course_structure():
     for chapter_url in chapters:
         if "url_name" in chapter_url.attrib:  # wiki is a chapter with no url
             chapter = read_xmlfile("chapter", chapter_url.attrib["url_name"])
-            print("    Chapter name: {display_name}".format(display_name=chapter.attrib["display_name"]))
+            print("{p}Chapter name: {display_name}".format(
+                display_name=chapter.attrib["display_name"], p=" " * 4))
             for sequential_url in chapter:
                 sequential = read_xmlfile("sequential", sequential_url.attrib["url_name"])
-                print("        Sequential name: {display_name}".format(display_name=sequential.attrib["display_name"]))
+                print("{p}Sequential name: {display_name}".format(display_name=sequential.attrib["display_name"], p=" " * 8))
 
                 for vertical_url in sequential:
                     vertical = read_xmlfile("vertical", vertical_url.attrib["url_name"])
-                    print("            Vertical name: {display_name}".format(display_name=vertical.attrib["display_name"]))
+                    print("{p}Vertical name: {display_name}".format(display_name=vertical.attrib["display_name"], p=" " * 12))
 
                     for xblock in vertical:
                         if xblock.tag == "libcast_xblock":
@@ -88,9 +91,17 @@ def read_course_structure():
                                 vertical_url.attrib["url_name"])
                         if xblock.tag == "video":
                             print("Suspect video xblock")
-    print(verticals_to_process)
 
-    process_verticals(verticals_to_process)
+    process_verticals(verticals_to_process, convert_video)
 
-if __name__ == "__main__":
-    read_course_structure()
+
+@click.command()
+@click.option("--path", type=click.Path(exists=True, file_okay=False, dir_okay=True,
+    writable=True, readable=True))
+@click.option("--convert-video", type=click.Choice(choices=["youtube", "marsha"]))
+def cli(path, convert_video):
+    read_course_structure(path, convert_video)
+
+
+if __name__ == '__main__':
+    cli()
