@@ -49,9 +49,14 @@ def read_course_structure(path, convert_video, target_vertical=None):
         """
         for url_name in verticals_to_process:
             vertical = read_xmlfile("vertical", url_name, getroot=True)
+
+
             print("Processing vertical {vertical}".format(vertical=url_name))
             for idx, xblock in enumerate(vertical):
-                if xblock.tag == "libcast_xblock" and convert_video:
+
+                if (xblock.tag == "libcast_xblock" or xblock.tag == "video") and convert_video:
+                    if "video_id" not in xblock.attrib:
+                        continue
                     if convert_video == "youtube":
                         # replace libcast node by a new "video" one, which points to a video xml file
                         replace = ET.Element("video")
@@ -68,7 +73,7 @@ def read_course_structure(path, convert_video, target_vertical=None):
                         video.attrib = {
                             "url_name": new_uuid,
                             "display_name":  xblock.attrib["display_name"],
-                            "download_video": xblock.attrib["allow_download"],
+                            "download_video": xblock.attrib.get("allow_download", "true"),
                             "html5_sources": """["{video_hd_url}"]""".format(video_hd_url=video_hd_url),
                             "sub": "",
                             "youtube_id_1_0": "",
@@ -84,6 +89,7 @@ def read_course_structure(path, convert_video, target_vertical=None):
                             base_path, path, "vertical", url_name + ".xml")
                         ET.ElementTree(vertical).write(
                             output_vertical)
+
 
     root = read_xmlfile("", "course")
     print("Course key: {url_name}/{org}/{course}".format(
@@ -115,9 +121,14 @@ def read_course_structure(path, convert_video, target_vertical=None):
                             verticals_to_process.append(
                                 vertical_url.attrib["url_name"])
                         if xblock.tag == "video":
+                            # Strangely we also have libcast xblocks called "video"
                             print("Suspect video xblock")
+                            verticals_to_process.append(
+                                vertical_url.attrib["url_name"])
+
     if target_vertical and target_vertical in verticals_to_process:
         verticals_to_process = [target_vertical]
+
     process_verticals(verticals_to_process, convert_video, path)
 
 
