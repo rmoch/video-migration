@@ -1,6 +1,6 @@
 import os
 import pprint
-
+import uuid
 import click
 
 import xmltodict
@@ -19,7 +19,7 @@ import xml.etree.ElementTree as ET
 CLOUDFRONT_URL = "https://d381hmu4snvm3e.cloudfront.net/videos/{video_id}/HD.mp4"
 
 
-def read_course_structure(path, convert_video):
+def read_course_structure(path, convert_video, target_vertical=None):
 
     def read_xmlfile(folder, url_name, getroot=True):
         """
@@ -43,22 +43,47 @@ def read_course_structure(path, convert_video):
         print("            Libcast video xblock for video ID: {url}".format(
             url=CLOUDFRONT_URL.format(video_id=xblock["@video_id"])))
 
-    def process_verticals(verticals_to_process, convert_video):
+    def process_verticals(verticals_to_process, convert_video, path):
         """
         Rewrite vertical xml file containing xblock we aim.
         """
-
         for url_name in verticals_to_process:
             vertical = read_xmlfile("vertical", url_name, getroot=True)
+            print("Processing vertical {vertical}".format(vertical=url_name))
             for idx, xblock in enumerate(vertical):
                 if xblock.tag == "libcast_xblock" and convert_video:
                     if convert_video == "youtube":
-                        import ipdb; ipdb.set_trace()
-                        video = ET.Element("video")
-                        video.attrib = {"display_name": vertical.attrib["display_name"]}
+                        # replace libcast node by a new "video" one, which points to a video xml file
+                        replace = ET.Element("video")
+                        new_uuid = uuid.uuid4().hex
+                        replace.attrib['url_name'] = new_uuid
                         del vertical[idx]
-                        vertical.insert(idx, video)
-                        print(ET.tostring(vertical))
+                        vertical.insert(idx, replace)
+                        video_hd_url = CLOUDFRONT_URL.format(video_id=xblock.attrib["video_id"])
+
+                        base_path = os.getcwd()
+                        os.makedirs(os.path.join(base_path, path, "video"), exist_ok=True)
+
+                        video = ET.Element("video")
+                        video.attrib = {
+                            "url_name": new_uuid,
+                            "display_name":  xblock.attrib["display_name"],
+                            "download_video": xblock.attrib["allow_download"],
+                            "html5_sources": """["{video_hd_url}"]""".format(video_hd_url=video_hd_url),
+                            "sub": "",
+                            "youtube_id_1_0": "",
+                            }
+                        source = ET.SubElement(video, 'source')
+                        source.attrib["src"] = video_hd_url
+                        # save new video node
+                        output_video = os.path.join(base_path, path, "video", new_uuid + ".xml")
+                        ET.ElementTree(video).write(
+                            output_video)
+                        # replace original vertical xml file
+                        output_vertical = os.path.join(
+                            base_path, path, "vertical", url_name + ".xml")
+                        ET.ElementTree(vertical).write(
+                            output_vertical)
 
     root = read_xmlfile("", "course")
     print("Course key: {url_name}/{org}/{course}".format(
@@ -91,16 +116,18 @@ def read_course_structure(path, convert_video):
                                 vertical_url.attrib["url_name"])
                         if xblock.tag == "video":
                             print("Suspect video xblock")
-
-    process_verticals(verticals_to_process, convert_video)
+    if target_vertical and target_vertical in verticals_to_process:
+        verticals_to_process = [target_vertical]
+    process_verticals(verticals_to_process, convert_video, path)
 
 
 @click.command()
 @click.option("--path", type=click.Path(exists=True, file_okay=False, dir_okay=True,
     writable=True, readable=True))
 @click.option("--convert-video", type=click.Choice(choices=["youtube", "marsha"]))
-def cli(path, convert_video):
-    read_course_structure(path, convert_video)
+@click.option("--vertical", type=click.STRING, required=False)
+def cli(path, convert_video, vertical):
+    read_course_structure(path, convert_video, vertical)
 
 
 if __name__ == '__main__':
